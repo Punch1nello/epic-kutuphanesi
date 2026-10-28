@@ -7,7 +7,7 @@ Bu proje doğrudan APK dağıtımı için bir güncelleme denetleyicisi içerir.
 Bu proje şu adreslere göre yapılandırıldı:
 
 - Manifest: `https://raw.githubusercontent.com/Punch1nello/epic-kutuphanesi/main/updates.json`
-- En son APK: `https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.3.apk`
+- Sürüme özel APK URL'si workflow tarafından oluşturulur: `https://github.com/Punch1nello/epic-kutuphanesi/releases/download/vX.Y.Z/EpicLibraryMobile-vX.Y.Z.apk`
 
 Depo public olmalı ki uygulama giriş yapmadan manifesti ve APK'yı okuyabilsin. Kaynak deposunda bulunan `.github/workflows/update-manifest.yml` iş akışı, yayınlanmış GitHub Release içindeki tek APK'yı bulur; SHA-256 özetini ve Gradle'daki sürüm numaralarını okuyarak `updates.json` dosyasını `main` dalında otomatik günceller.
 
