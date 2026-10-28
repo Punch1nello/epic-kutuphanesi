@@ -1,0 +1,3 @@
+# Local OAuth configuration is intentionally ignored by Git.
+# Create Secrets.xcconfig beside this file and set EPIC_CLIENT_SECRET there.
+#include? "Secrets.xcconfig"

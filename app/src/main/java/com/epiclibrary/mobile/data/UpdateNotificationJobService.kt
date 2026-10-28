@@ -132,4 +132,3 @@ class UpdateNotificationJobService : JobService() {
         const val NOTIFICATION_ID = 4103
     }
 }
-

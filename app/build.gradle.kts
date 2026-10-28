@@ -14,8 +14,8 @@ android {
         applicationId = "com.epiclibrary.mobile"
         minSdk = 26
         targetSdk = 37
-        versionCode = 13
-        versionName = "1.0.3"
+        versionCode = 14
+        versionName = "1.0.4"
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$escapedUpdateManifestUrl\"")
     }
 
@@ -44,4 +44,3 @@ dependencies {
         
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-

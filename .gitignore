@@ -1,0 +1,15 @@
+.gradle/
+.kotlin/
+.idea/
+**/build/
+local.properties
+*.iml
+.DS_Store
+.externalNativeBuild/
+.cxx/
+*.jks
+*.keystore
+*.p12
+keystore.properties
+signing.properties
+/ios/EpicLibraryIOS/Secrets.xcconfig

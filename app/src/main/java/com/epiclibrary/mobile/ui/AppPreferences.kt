@@ -54,4 +54,3 @@ class AppPreferences(context: Context) {
         const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update_version_code"
     }
 }
-

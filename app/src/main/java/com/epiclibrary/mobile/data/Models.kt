@@ -24,4 +24,3 @@ data class GameCollection(
     val name: String,
     val gameIds: Set<String> = emptySet()
 )
-

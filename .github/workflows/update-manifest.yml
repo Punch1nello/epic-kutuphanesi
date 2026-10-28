@@ -68,4 +68,3 @@ jobs:
           fi
           git commit -m "Update app manifest for ${GITHUB_REF_NAME}"
           git push origin HEAD:main
-

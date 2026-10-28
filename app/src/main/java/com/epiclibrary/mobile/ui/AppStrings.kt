@@ -483,4 +483,3 @@ object AppStrings {
         }
     }
 }
-

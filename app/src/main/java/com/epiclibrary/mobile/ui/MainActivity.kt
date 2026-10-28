@@ -602,11 +602,15 @@ private fun HomeScreen(
     }
 
     val storeHasBackDestination = storeCanGoBack.value || !isStoreHomeUrl(storeCurrentUrl.value)
-    BackHandler(enabled = selectedPage == AppPage.STORE && storeHasBackDestination) {
-        val currentUrl = storeWebView.url ?: storeCurrentUrl.value
-        when {
-            storeWebView.canGoBack() -> storeWebView.goBack()
-            !isStoreHomeUrl(currentUrl) -> storeWebView.loadUrl(STORE_HOME_URL)
+    BackHandler(enabled = selectedPage != AppPage.STORE || storeHasBackDestination) {
+        if (selectedPage != AppPage.STORE) {
+            selectedPage = AppPage.STORE
+        } else {
+            val currentUrl = storeWebView.url ?: storeCurrentUrl.value
+            when {
+                storeWebView.canGoBack() -> storeWebView.goBack()
+                !isStoreHomeUrl(currentUrl) -> storeWebView.loadUrl(STORE_HOME_URL)
+            }
         }
     }
 
@@ -789,37 +793,33 @@ private fun LibraryPage(
 ) {
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(LibraryCategory.ALL) }
-    var selectedGenre by remember { mutableStateOf<String?>(null) }
     var selectedPlayerMode by remember { mutableStateOf<String?>(null) }
     var sortMode by remember { mutableStateOf(LibrarySort.AZ) }
     var sortExpanded by remember { mutableStateOf(false) }
     var selectedCollectionId by remember { mutableStateOf<String?>(null) }
     val selectedCollection = collections.firstOrNull { it.id == selectedCollectionId }
-    val genreIds = remember(games, language) {
-        games.asSequence()
-            .filter { it.kind == LibraryItemKind.GAME }
-            .map { it.genre.ifBlank { "other" } }
-            .distinct()
-            .sortedBy { AppStrings.genre(language, it) }
-            .toList()
+    val uniqueGames = remember(games) {
+        games.distinctBy { game ->
+            game.id.ifBlank { "${game.namespace}:${game.catalogItemId}:${game.appName}:${game.title}" }
+        }
     }
+    val uniqueCollections = remember(collections) { collections.distinctBy { it.id } }
     val hasPlaytimeData = games.any { it.kind == LibraryItemKind.GAME && it.playtimeMinutes != null }
     val hasPlayerModeData = games.any { it.kind == LibraryItemKind.GAME && it.playerModes.isNotEmpty() }
     val collator = remember(language) { Collator.getInstance(java.util.Locale.forLanguageTag(language.localeTag)) }
-    val filtered = games.filter { game ->
+    val filtered = uniqueGames.filter { game ->
         val categoryMatches = when (selectedCategory) {
             LibraryCategory.ALL -> true
             LibraryCategory.GAMES -> game.kind == LibraryItemKind.GAME
             LibraryCategory.TOOLS -> game.kind == LibraryItemKind.TOOL
         }
-        val genreMatches = selectedGenre == null || (game.kind == LibraryItemKind.GAME && game.genre == selectedGenre)
         val playerModeMatches = selectedPlayerMode == null || game.playerModes.contains(selectedPlayerMode)
         val collectionMatches = selectedCollection == null ||
             selectedCollection.gameIds.contains(game.id) ||
             selectedCollection.gameIds.contains(game.appName) ||
             selectedCollection.gameIds.contains(game.catalogItemId) ||
             selectedCollection.gameIds.contains("${game.namespace}:${game.catalogItemId}")
-        categoryMatches && genreMatches && playerModeMatches && collectionMatches && game.title.contains(search, ignoreCase = true)
+        categoryMatches && playerModeMatches && collectionMatches && game.title.contains(search, ignoreCase = true)
     }
     val sorted = when (sortMode) {
         LibrarySort.AZ -> filtered.sortedWith { left, right -> collator.compare(left.title, right.title) }
@@ -841,15 +841,8 @@ private fun LibraryPage(
         }
     }
 
-    fun filterByGenre(genreId: String) {
-        selectedCategory = LibraryCategory.GAMES
-        selectedPlayerMode = null
-        selectedGenre = if (selectedGenre == genreId) null else genreId
-    }
-
     fun filterByPlayerMode(mode: String) {
         selectedCategory = LibraryCategory.GAMES
-        selectedGenre = null
         selectedPlayerMode = if (selectedPlayerMode == mode) null else mode
     }
 
@@ -883,7 +876,7 @@ private fun LibraryPage(
                         label = { Text(AppStrings.text(language, "filter_all")) }
                     )
                 }
-                items(collections, key = { it.id }) { collection ->
+                items(uniqueCollections, key = { it.id }) { collection ->
                     FilterChip(
                         selected = selectedCollectionId == collection.id,
                         onClick = { selectedCollectionId = collection.id },
@@ -895,47 +888,45 @@ private fun LibraryPage(
 
         Spacer(Modifier.height(6.dp))
         SectionHeading(AppStrings.text(language, "library_categories"))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                FilterChip(
-                    selected = selectedCategory == LibraryCategory.ALL,
-                    onClick = {
-                        selectedCategory = LibraryCategory.ALL
-                        selectedGenre = null
-                        selectedPlayerMode = null
-                    },
-                    label = { Text(AppStrings.text(language, "filter_all")) }
-                )
-            }
-            item {
-                FilterChip(
-                    selected = selectedCategory == LibraryCategory.GAMES,
-                    onClick = {
-                        selectedCategory = LibraryCategory.GAMES
-                        selectedGenre = null
-                        selectedPlayerMode = null
-                    },
-                    label = { Text(AppStrings.text(language, "category_games")) }
-                )
-            }
-            item {
-                FilterChip(
-                    selected = selectedCategory == LibraryCategory.TOOLS,
-                    onClick = {
-                        selectedCategory = LibraryCategory.TOOLS
-                        selectedGenre = null
-                        selectedPlayerMode = null
-                        if (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED) sortMode = LibrarySort.AZ
-                    },
-                    label = { Text(AppStrings.text(language, "category_tools")) }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionHeading(AppStrings.text(language, "genres"))
-            Spacer(Modifier.weight(1f))
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    FilterChip(
+                        selected = selectedCategory == LibraryCategory.ALL,
+                        onClick = {
+                            selectedCategory = LibraryCategory.ALL
+                            selectedPlayerMode = null
+                        },
+                        label = { Text(AppStrings.text(language, "filter_all")) }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = selectedCategory == LibraryCategory.GAMES,
+                        onClick = {
+                            selectedCategory = LibraryCategory.GAMES
+                            selectedPlayerMode = null
+                        },
+                        label = { Text(AppStrings.text(language, "category_games")) }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = selectedCategory == LibraryCategory.TOOLS,
+                        onClick = {
+                            selectedCategory = LibraryCategory.TOOLS
+                            selectedPlayerMode = null
+                            if (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED) sortMode = LibrarySort.AZ
+                        },
+                        label = { Text(AppStrings.text(language, "category_tools")) }
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
             Box {
                 OutlinedButton(
                     onClick = { sortExpanded = true },
@@ -991,46 +982,14 @@ private fun LibraryPage(
                                 enabled = false
                             )
                         }
-                        if (genreIds.isNotEmpty()) {
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(AppStrings.text(language, "sort_genres_heading"), fontWeight = FontWeight.Bold) },
-                                onClick = {},
-                                enabled = false
-                            )
-                            genreIds.forEach { genreId ->
-                                DropdownMenuItem(
-                                    text = { Text(AppStrings.genre(language, genreId)) },
-                                    onClick = { filterByGenre(genreId); sortExpanded = false }
-                                )
-                            }
-                        }
                     }
-                }
-            }
-        }
-        if (selectedCategory != LibraryCategory.TOOLS) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    FilterChip(
-                        selected = selectedGenre == null && selectedPlayerMode == null,
-                        onClick = { selectedGenre = null; selectedPlayerMode = null },
-                        label = { Text(AppStrings.text(language, "filter_all")) }
-                    )
-                }
-                items(genreIds, key = { it }) { genreId ->
-                    FilterChip(
-                        selected = selectedGenre == genreId,
-                        onClick = { filterByGenre(genreId) },
-                        label = { Text(AppStrings.genre(language, genreId)) }
-                    )
                 }
             }
         }
 
         Spacer(Modifier.height(6.dp))
         if (sorted.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     if (selectedCollection != null) AppStrings.text(language, "empty_collection")
                     else AppStrings.text(language, "empty_library"),
@@ -1045,7 +1004,9 @@ private fun LibraryPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 18.dp)
             ) {
-                items(sorted, key = { it.id }) { game -> GameCard(game, language) }
+                items(sorted, key = { game ->
+                    game.id.ifBlank { "${game.namespace}:${game.catalogItemId}:${game.appName}:${game.title}" }
+                }) { game -> GameCard(game, language) }
             }
         }
     }
@@ -1409,4 +1370,3 @@ private fun extractAuthorizationCode(input: String): String {
     return Regex("authorizationCode\\s*[=:]\\s*[\\\"]([^\\\"]+)")
         .find(trimmed)?.groupValues?.get(1) ?: trimmed
 }
-

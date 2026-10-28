@@ -93,6 +93,8 @@ class RealEpicApi(
                         .getOrElse { recordToFallbackGame(record) }
                 }
             }.awaitAll()
+        }.distinctBy { game ->
+            game.id.ifBlank { "${game.namespace}:${game.catalogItemId}:${game.appName}:${game.title}" }
         }
     }
 
@@ -119,7 +121,7 @@ class RealEpicApi(
                 val gameIds = loadCollectionGameIds(accessToken, accountId, id)
                 result += GameCollection(id = id, name = name, gameIds = gameIds)
             }
-            result
+            result.distinctBy { it.id }
         }.getOrElse { emptyList() }
     }
 
@@ -309,7 +311,7 @@ class RealEpicApi(
 
     private fun classifyItem(record: JSONObject, catalog: JSONObject?, categories: JSONArray?): LibraryItemKind {
         if (record.optString("namespace").equals("ue", ignoreCase = true)) return LibraryItemKind.TOOL
-        val metadataText = buildList {
+        val explicitTypes = buildList {
             listOf(record, catalog).filterNotNull().forEach { json ->
                 listOf("itemType", "productType", "applicationType", "artifactType", "type", "kind")
                     .forEach { key -> json.optString(key).takeIf(String::isNotBlank)?.let(::add) }
@@ -318,21 +320,24 @@ class RealEpicApi(
                         .forEach { key -> metadata.optString(key).takeIf(String::isNotBlank)?.let(::add) }
                 }
             }
-            catalog?.optString("title")?.takeIf(String::isNotBlank)?.let(::add)
-            record.optString("appName").takeIf(String::isNotBlank)?.let(::add)
-            if (categories != null) {
-                for (i in 0 until categories.length()) {
-                    categories.optJSONObject(i)?.optString("path")?.takeIf(String::isNotBlank)?.let(::add)
-                }
-            }
-        }.joinToString(" ").lowercase()
-
-        val toolTerms = listOf(
-            "application", "applications", "developer tool", "developer tools", "editor",
-            "engine", "utility", "utilities", "software", "launcher", "development tool",
-            "development tools", "unreal engine", "unreal editor", "unrealengine", "unrealeditor"
+        }
+        val toolTypeNames = setOf(
+            "application", "applications", "editor", "tool", "tools", "utility", "utilities", "launcher", "software"
         )
-        return if (toolTerms.any(metadataText::contains)) LibraryItemKind.TOOL else LibraryItemKind.GAME
+        val explicitToolType = explicitTypes.any { value ->
+            value.lowercase().replace('_', ' ').replace('-', ' ').trim() in toolTypeNames
+        }
+        val toolCategoryNames = setOf(
+            "application", "applications", "developer tools", "development tools", "editor", "tools", "utilities"
+        )
+        val explicitToolCategory = categories?.let { values ->
+            (0 until values.length()).any { index ->
+                val path = values.optJSONObject(index)?.optString("path").orEmpty()
+                    .lowercase().replace('_', ' ').replace('-', ' ')
+                path.split('/', '\\').any { it.trim() in toolCategoryNames }
+            }
+        } == true
+        return if (explicitToolType || explicitToolCategory) LibraryItemKind.TOOL else LibraryItemKind.GAME
     }
 
     /** Playtime is optional: Epic's public library response may not include it. */
@@ -464,4 +469,3 @@ class RealEpicApi(
     }
 
 }
-

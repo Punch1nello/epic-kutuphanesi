@@ -22,9 +22,9 @@ Herkese açık bir HTTPS sunucusuna şunları koy:
 
 ```json
 {
-  "versionCode": 13,
-  "versionName": "1.0.3",
-  "apkUrl": "https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.3.apk",
+  "versionCode": 14,
+  "versionName": "1.0.4",
+  "apkUrl": "https://github.com/Punch1nello/epic-kutuphanesi/releases/download/v1.0.4/EpicLibraryMobile-v1.0.4.apk",
   "sha256": "APK_DOSYASININ_64_HANELI_SHA256_OZETI",
   "releaseNotes": "Arayüz, dil ve mağaza gezintisi iyileştirmeleri"
 }
@@ -44,5 +44,4 @@ Ardından uygulamayı yeniden derle.
 
 ## İlk kurulum ve imza
 
-Mevcut v0.9.0 APK'sı debug imzalıdır. Uygulama içi güncelleme kaynağı kurulana kadar v0.9.0'ı bir kez elle kurmak gerekir. Sonraki APK aynı paket kimliği ve imza anahtarıyla derlenmeli; başka kullanıcılara kalıcı dağıtım yaparken sabit release anahtarı kullan ve anahtarı proje dosyalarının içine koyma. Anahtar değişirse Android güncellemenin üzerine kurulmasına izin vermez.
-
+GitHub'daki mevcut v1.0.2 APK'sı debug imzalıdır. Uygulama içi güncelleme için yeni APK aynı paket kimliği ve aynı imza anahtarıyla derlenmelidir. Anahtar değişirse Android güncellemenin üzerine kurulmasına izin vermez. Kalıcı dağıtım için sabit bir release anahtarı kullan; anahtarı veya parolasını depoya ekleme.
