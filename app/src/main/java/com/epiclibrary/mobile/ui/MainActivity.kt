@@ -1,13 +1,11 @@
 package com.epiclibrary.mobile.ui
 
-import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.os.Message
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -16,9 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -35,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,9 +52,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.epiclibrary.mobile.BuildConfig
 import com.epiclibrary.mobile.data.AppUpdateInfo
@@ -72,7 +69,6 @@ import com.epiclibrary.mobile.data.GameCollection
 import com.epiclibrary.mobile.data.LibraryItemKind
 import com.epiclibrary.mobile.data.RealEpicApi
 import com.epiclibrary.mobile.data.SecureTokenStore
-import com.epiclibrary.mobile.data.UpdateNotificationScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -126,38 +122,10 @@ fun EpicLibraryApp() {
 
     var language by remember { mutableStateOf(preferences.language()) }
     var themeMode by remember { mutableStateOf(preferences.theme()) }
-    var notificationsEnabled by remember { mutableStateOf(preferences.notificationsEnabled()) }
     var state by remember { mutableStateOf<AppState>(AppState.Loading(AppStrings.text(language, "loading_start"))) }
     var code by remember { mutableStateOf("") }
     var updateStatus by remember { mutableStateOf<AppUpdateStatus>(AppUpdateStatus.NotChecked) }
     var showUpdatePrompt by remember { mutableStateOf(false) }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        notificationsEnabled = granted
-        preferences.setNotificationsEnabled(granted)
-        if (granted) UpdateNotificationScheduler.schedule(context)
-        else UpdateNotificationScheduler.cancel(context)
-    }
-
-    fun setNotificationsEnabled(enabled: Boolean) {
-        if (!enabled) {
-            notificationsEnabled = false
-            preferences.setNotificationsEnabled(false)
-            UpdateNotificationScheduler.cancel(context)
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-        notificationsEnabled = true
-        preferences.setNotificationsEnabled(true)
-        UpdateNotificationScheduler.schedule(context)
-    }
-
     fun text(key: String, vararg args: Any): String = AppStrings.text(language, key, *args)
 
     suspend fun checkForUpdates() {
@@ -296,11 +264,6 @@ fun EpicLibraryApp() {
     LaunchedEffect(Unit) {
         restoreSession()
         checkForUpdates()
-        if (notificationsEnabled && (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
-        ) {
-            UpdateNotificationScheduler.schedule(context)
-        }
     }
 
     fun openEpicLogin() {
@@ -389,7 +352,6 @@ fun EpicLibraryApp() {
                     isRefreshing = current.isRefreshing,
                     refreshError = current.refreshError,
                     updateStatus = updateStatus,
-                    notificationsEnabled = notificationsEnabled,
                     onSelectLanguage = { selected ->
                         preferences.setLanguage(selected)
                         language = selected
@@ -400,7 +362,6 @@ fun EpicLibraryApp() {
                         themeMode = selected
                     },
                     onCheckUpdates = { scope.launch { checkForUpdates() } },
-                    onNotificationsEnabledChange = ::setNotificationsEnabled,
                     onInstallUpdate = ::installUpdate,
                     onRefreshLibrary = ::refreshLibrary,
                     onLogout = {
@@ -565,11 +526,9 @@ private fun HomeScreen(
     isRefreshing: Boolean,
     refreshError: String?,
     updateStatus: AppUpdateStatus,
-    notificationsEnabled: Boolean,
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppThemeMode) -> Unit,
     onCheckUpdates: () -> Unit,
-    onNotificationsEnabledChange: (Boolean) -> Unit,
     onInstallUpdate: (AppUpdateInfo) -> Unit,
     onRefreshLibrary: () -> Unit,
     onLogout: () -> Unit
@@ -579,6 +538,16 @@ private fun HomeScreen(
     val storeError = remember { mutableStateOf(false) }
     val storeCanGoBack = remember { mutableStateOf(false) }
     val storeCurrentUrl = remember { mutableStateOf(STORE_HOME_URL) }
+    var storePopupWebView by remember { mutableStateOf<WebView?>(null) }
+
+    fun closeStorePopup(webView: WebView) {
+        if (storePopupWebView !== webView) return
+        storePopupWebView = null
+        webView.stopLoading()
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        webView.destroy()
+    }
+
     val storeWebView = remember(context) {
         createStoreWebView(
             context = context,
@@ -587,7 +556,15 @@ private fun HomeScreen(
             onNavigationChanged = { url, canGoBack ->
                 if (!url.isNullOrBlank()) storeCurrentUrl.value = url
                 storeCanGoBack.value = canGoBack
-            }
+            },
+            onPopupRequested = { popup ->
+                if (storePopupWebView != null) false
+                else {
+                    storePopupWebView = popup
+                    true
+                }
+            },
+            onClosePopup = ::closeStorePopup
         )
     }
     var selectedPage by remember { mutableStateOf(AppPage.STORE) }
@@ -595,6 +572,7 @@ private fun HomeScreen(
     DisposableEffect(storeWebView) {
         onDispose {
             CookieManager.getInstance().flush()
+            storePopupWebView?.let(::closeStorePopup)
             storeWebView.stopLoading()
             (storeWebView.parent as? ViewGroup)?.removeView(storeWebView)
             storeWebView.destroy()
@@ -705,7 +683,11 @@ private fun HomeScreen(
                     webView = storeWebView,
                     loading = storeLoading.value,
                     failed = storeError.value,
-                    language = language
+                    language = language,
+                    onRetry = {
+                        if (storeWebView.url.isNullOrBlank()) storeWebView.loadUrl(STORE_HOME_URL)
+                        else storeWebView.reload()
+                    }
                 )
                 AppPage.LIBRARY -> LibraryPage(
                     language = language,
@@ -719,17 +701,21 @@ private fun HomeScreen(
                     themeMode = themeMode,
                     displayName = displayName,
                     updateStatus = updateStatus,
-                    notificationsEnabled = notificationsEnabled,
                     onLanguage = onSelectLanguage,
                     onTheme = onSelectTheme,
                     onCheckUpdates = onCheckUpdates,
-                    onNotificationsEnabledChange = onNotificationsEnabledChange,
                     onInstallUpdate = onInstallUpdate,
                     onLogout = onLogout
                 )
             }
         }
     }
+
+    StorePopupDialog(
+        webView = storePopupWebView,
+        language = language,
+        onClose = { storePopupWebView?.let(::closeStorePopup) }
+    )
 }
 
 @Composable
@@ -797,6 +783,8 @@ private fun LibraryPage(
     var sortMode by remember { mutableStateOf(LibrarySort.AZ) }
     var sortExpanded by remember { mutableStateOf(false) }
     var selectedCollectionId by remember { mutableStateOf<String?>(null) }
+    val gridState = rememberLazyGridState()
+    val scrollScope = rememberCoroutineScope()
     val selectedCollection = collections.firstOrNull { it.id == selectedCollectionId }
     val uniqueGames = remember(games) {
         games.distinctBy { game ->
@@ -844,6 +832,22 @@ private fun LibraryPage(
     fun filterByPlayerMode(mode: String) {
         selectedCategory = LibraryCategory.GAMES
         selectedPlayerMode = if (selectedPlayerMode == mode) null else mode
+        scrollScope.launch { if (sorted.isNotEmpty()) gridState.animateScrollToItem(0) }
+    }
+
+    fun selectSort(sort: LibrarySort) {
+        sortMode = sort
+        sortExpanded = false
+        scrollScope.launch { if (sorted.isNotEmpty()) gridState.animateScrollToItem(0) }
+    }
+
+    fun selectCategory(category: LibraryCategory) {
+        selectedCategory = category
+        selectedPlayerMode = null
+        if (category == LibraryCategory.TOOLS &&
+            (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED)
+        ) sortMode = LibrarySort.AZ
+        scrollScope.launch { if (sorted.isNotEmpty()) gridState.animateScrollToItem(0) }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -897,31 +901,21 @@ private fun LibraryPage(
                 item {
                     FilterChip(
                         selected = selectedCategory == LibraryCategory.ALL,
-                        onClick = {
-                            selectedCategory = LibraryCategory.ALL
-                            selectedPlayerMode = null
-                        },
+                        onClick = { selectCategory(LibraryCategory.ALL) },
                         label = { Text(AppStrings.text(language, "filter_all")) }
                     )
                 }
                 item {
                     FilterChip(
                         selected = selectedCategory == LibraryCategory.GAMES,
-                        onClick = {
-                            selectedCategory = LibraryCategory.GAMES
-                            selectedPlayerMode = null
-                        },
+                        onClick = { selectCategory(LibraryCategory.GAMES) },
                         label = { Text(AppStrings.text(language, "category_games")) }
                     )
                 }
                 item {
                     FilterChip(
                         selected = selectedCategory == LibraryCategory.TOOLS,
-                        onClick = {
-                            selectedCategory = LibraryCategory.TOOLS
-                            selectedPlayerMode = null
-                            if (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED) sortMode = LibrarySort.AZ
-                        },
+                        onClick = { selectCategory(LibraryCategory.TOOLS) },
                         label = { Text(AppStrings.text(language, "category_tools")) }
                     )
                 }
@@ -941,21 +935,21 @@ private fun LibraryPage(
                     )
                     DropdownMenuItem(
                         text = { Text(AppStrings.text(language, "sort_az")) },
-                        onClick = { sortMode = LibrarySort.AZ; sortExpanded = false }
+                        onClick = { selectSort(LibrarySort.AZ) }
                     )
                     DropdownMenuItem(
                         text = { Text(AppStrings.text(language, "sort_za")) },
-                        onClick = { sortMode = LibrarySort.ZA; sortExpanded = false }
+                        onClick = { selectSort(LibrarySort.ZA) }
                     )
                     if (selectedCategory != LibraryCategory.TOOLS) {
                         DropdownMenuItem(
                             text = { Text(AppStrings.text(language, "sort_most_played")) },
-                            onClick = { sortMode = LibrarySort.MOST_PLAYED; sortExpanded = false },
+                            onClick = { selectSort(LibrarySort.MOST_PLAYED) },
                             enabled = hasPlaytimeData
                         )
                         DropdownMenuItem(
                             text = { Text(AppStrings.text(language, "sort_least_played")) },
-                            onClick = { sortMode = LibrarySort.LEAST_PLAYED; sortExpanded = false },
+                            onClick = { selectSort(LibrarySort.LEAST_PLAYED) },
                             enabled = hasPlaytimeData
                         )
                         HorizontalDivider()
@@ -999,6 +993,7 @@ private fun LibraryPage(
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
+                state = gridState,
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1028,7 +1023,8 @@ private fun StorePage(
     webView: WebView,
     loading: Boolean,
     failed: Boolean,
-    language: AppLanguage
+    language: AppLanguage,
+    onRetry: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(Color(0xFFF4F5FA))) {
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
@@ -1049,7 +1045,41 @@ private fun StorePage(
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         fontSize = 12.sp
                     )
+                    TextButton(onClick = onRetry) {
+                        Text(AppStrings.text(language, "store_retry"))
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorePopupDialog(webView: WebView?, language: AppLanguage, onClose: () -> Unit) {
+    if (webView == null) return
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize().padding(8.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(AppStrings.text(language, "store_checkout"), fontWeight = FontWeight.Bold)
+                    TextButton(onClick = onClose) { Text("✕") }
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    factory = { webView },
+                    update = { }
+                )
             }
         }
     }
@@ -1059,7 +1089,10 @@ private fun createStoreWebView(
     context: Context,
     onLoading: (Boolean) -> Unit,
     onError: (Boolean) -> Unit,
-    onNavigationChanged: (String?, Boolean) -> Unit
+    onNavigationChanged: (String?, Boolean) -> Unit,
+    onPopupRequested: (WebView) -> Boolean,
+    onClosePopup: (WebView) -> Unit,
+    isPopup: Boolean = false
 ): WebView {
     CookieManager.getInstance().setAcceptCookie(true)
     return WebView(context).apply {
@@ -1069,7 +1102,11 @@ private fun createStoreWebView(
         settings.allowContentAccess = false
         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.javaScriptCanOpenWindowsAutomatically = false
-        settings.setSupportMultipleWindows(false)
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = false
+        settings.textZoom = 100
+        settings.setSupportZoom(false)
+        settings.setSupportMultipleWindows(!isPopup)
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean =
@@ -1102,10 +1139,59 @@ private fun createStoreWebView(
                     onError(true)
                 }
             }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: android.webkit.WebResourceResponse?
+            ) {
+                if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 0) >= 400) {
+                    onLoading(false)
+                    onError(true)
+                }
+            }
         }
-        webChromeClient = WebChromeClient()
+        webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                onLoading(newProgress < 100)
+            }
+
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean {
+                if (isPopup || !isUserGesture || resultMsg == null) return false
+                val popup = createStoreWebView(
+                    context = context,
+                    onLoading = onLoading,
+                    onError = onError,
+                    onNavigationChanged = { _, _ -> },
+                    onPopupRequested = onPopupRequested,
+                    onClosePopup = onClosePopup,
+                    isPopup = true
+                )
+                if (!onPopupRequested(popup)) {
+                    popup.destroy()
+                    return false
+                }
+                val transport = resultMsg.obj as? WebView.WebViewTransport
+                if (transport == null) {
+                    onClosePopup(popup)
+                    return false
+                }
+                transport.webView = popup
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onCloseWindow(window: WebView?) {
+                if (window != null) onClosePopup(window)
+            }
+        }
         setBackgroundColor(android.graphics.Color.rgb(244, 245, 250))
-        loadUrl(STORE_HOME_URL)
+        if (!isPopup) loadUrl(STORE_HOME_URL)
     }
 }
 
@@ -1150,7 +1236,7 @@ private fun GameCard(game: Game, language: AppLanguage) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (game.kind == LibraryItemKind.GAME) {
+                if (game.kind == LibraryItemKind.GAME && game.playtimeMinutes != null) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         AppStrings.playtime(language, game.playtimeMinutes),
@@ -1171,11 +1257,9 @@ private fun SettingsPage(
     themeMode: AppThemeMode,
     displayName: String,
     updateStatus: AppUpdateStatus,
-    notificationsEnabled: Boolean,
     onLanguage: (AppLanguage) -> Unit,
     onTheme: (AppThemeMode) -> Unit,
     onCheckUpdates: () -> Unit,
-    onNotificationsEnabledChange: (Boolean) -> Unit,
     onInstallUpdate: (AppUpdateInfo) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -1244,25 +1328,6 @@ private fun SettingsPage(
                     status = updateStatus,
                     onCheck = onCheckUpdates,
                     onInstall = onInstallUpdate
-                )
-            }
-        }
-        item {
-            SettingsCard(title = AppStrings.text(language, "notifications")) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(AppStrings.text(language, "notifications_help"), color = colors.onSurfaceVariant, fontSize = 13.sp)
-                    }
-                    Switch(
-                        checked = notificationsEnabled,
-                        onCheckedChange = onNotificationsEnabledChange
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    AppStrings.text(language, "wishlist_alerts_unavailable"),
-                    color = colors.onSurfaceVariant,
-                    fontSize = 12.sp
                 )
             }
         }
@@ -1370,3 +1435,4 @@ private fun extractAuthorizationCode(input: String): String {
     return Regex("authorizationCode\\s*[=:]\\s*[\\\"]([^\\\"]+)")
         .find(trimmed)?.groupValues?.get(1) ?: trimmed
 }
+

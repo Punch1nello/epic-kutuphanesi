@@ -289,7 +289,7 @@ class RealEpicApi(
             namespace = namespace,
             catalogItemId = catalogId,
             appName = appName,
-            kind = classifyItem(record, item, categories),
+            kind = classifyItem(record, item),
             playtimeMinutes = readPlaytimeMinutes(record),
             playerModes = detectPlayerModes(categories)
         )
@@ -304,40 +304,37 @@ class RealEpicApi(
         namespace = record.optString("namespace"),
         catalogItemId = record.optString("catalogItemId"),
         appName = record.optString("appName"),
-        kind = classifyItem(record, null, record.optJSONArray("categories")),
+        kind = classifyItem(record, null),
         playtimeMinutes = readPlaytimeMinutes(record),
         playerModes = detectPlayerModes(record.optJSONArray("categories"))
     )
 
-    private fun classifyItem(record: JSONObject, catalog: JSONObject?, categories: JSONArray?): LibraryItemKind {
+    private fun classifyItem(record: JSONObject, catalog: JSONObject?): LibraryItemKind {
+        // Catalog categories and generic "application" metadata also occur on games.
+        // Only recognize known Epic creative/developer products as tools; default to game.
         if (record.optString("namespace").equals("ue", ignoreCase = true)) return LibraryItemKind.TOOL
-        val explicitTypes = buildList {
-            listOf(record, catalog).filterNotNull().forEach { json ->
-                listOf("itemType", "productType", "applicationType", "artifactType", "type", "kind")
-                    .forEach { key -> json.optString(key).takeIf(String::isNotBlank)?.let(::add) }
-                json.optJSONObject("metadata")?.let { metadata ->
-                    listOf("itemType", "productType", "applicationType", "artifactType", "type", "kind")
-                        .forEach { key -> metadata.optString(key).takeIf(String::isNotBlank)?.let(::add) }
-                }
-            }
-        }
-        val toolTypeNames = setOf(
-            "application", "applications", "editor", "tool", "tools", "utility", "utilities", "launcher", "software"
+
+        fun normalize(value: String): String = value
+            .lowercase()
+            .replace('&', ' ')
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
+
+        val names = listOf(
+            record.optString("appName"),
+            record.optString("title"),
+            catalog?.optString("title").orEmpty(),
+            catalog?.optString("developerDisplayName").orEmpty()
+        ).map(::normalize)
+        val knownToolNames = setOf(
+            "unreal engine", "unreal editor", "unreal editor for fortnite", "uefn",
+            "twinmotion", "realityscan", "reality scan", "realitycapture", "reality capture",
+            "metahuman creator", "quixel bridge", "quixel mixer"
         )
-        val explicitToolType = explicitTypes.any { value ->
-            value.lowercase().replace('_', ' ').replace('-', ' ').trim() in toolTypeNames
-        }
-        val toolCategoryNames = setOf(
-            "application", "applications", "developer tools", "development tools", "editor", "tools", "utilities"
-        )
-        val explicitToolCategory = categories?.let { values ->
-            (0 until values.length()).any { index ->
-                val path = values.optJSONObject(index)?.optString("path").orEmpty()
-                    .lowercase().replace('_', ' ').replace('-', ' ')
-                path.split('/', '\\').any { it.trim() in toolCategoryNames }
-            }
-        } == true
-        return if (explicitToolType || explicitToolCategory) LibraryItemKind.TOOL else LibraryItemKind.GAME
+        val knownToolPattern = Regex("^(unreal engine|twinmotion)( [0-9]+( [0-9]+)*)?$")
+        val isKnownTool = names.any { it in knownToolNames || knownToolPattern.matches(it) }
+        return if (isKnownTool) LibraryItemKind.TOOL else LibraryItemKind.GAME
     }
 
     /** Playtime is optional: Epic's public library response may not include it. */
@@ -469,3 +466,4 @@ class RealEpicApi(
     }
 
 }
+
