@@ -1,0 +1,71 @@
+name: Update Android app manifest
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main and release tags
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read release APK and version metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+
+          gradle_file="$(git show "${RELEASE_TAG}:app/build.gradle.kts")"
+          version_code="$(printf '%s\n' "$gradle_file" | sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' | head -n1)"
+          version_name="$(printf '%s\n' "$gradle_file" | sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*$/\1/p' | head -n1)"
+
+          if [[ -z "$version_code" || -z "$version_name" ]]; then
+            echo "Could not read versionCode/versionName from ${RELEASE_TAG}:app/build.gradle.kts" >&2
+            exit 1
+          fi
+
+          apk_dir="${RUNNER_TEMP}/release-apk"
+          mkdir -p "$apk_dir"
+          gh release download "$RELEASE_TAG" --repo "$REPOSITORY" --pattern '*.apk' --dir "$apk_dir"
+          mapfile -t apks < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' -print)
+          if [[ "${#apks[@]}" -ne 1 ]]; then
+            echo "Expected exactly one APK asset in release ${RELEASE_TAG}; found ${#apks[@]}" >&2
+            exit 1
+          fi
+
+          apk_name="$(basename "${apks[0]}")"
+          sha256="$(sha256sum "${apks[0]}" | cut -d ' ' -f 1)"
+          apk_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${apk_name}"
+          jq -n \
+            --argjson versionCode "$version_code" \
+            --arg versionName "$version_name" \
+            --arg apkUrl "$apk_url" \
+            --arg sha256 "$sha256" \
+            --arg releaseNotes "${RELEASE_BODY:-}" \
+            '{versionCode:$versionCode,versionName:$versionName,apkUrl:$apkUrl,sha256:$sha256,releaseNotes:$releaseNotes}' \
+            > updates.json
+
+      - name: Commit updated manifest to main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates.json
+          if git diff --cached --quiet; then
+            echo "updates.json is already current"
+            exit 0
+          fi
+          git commit -m "Update app manifest for ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
+

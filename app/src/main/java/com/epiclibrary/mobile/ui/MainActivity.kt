@@ -1,9 +1,12 @@
 package com.epiclibrary.mobile.ui
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -13,7 +16,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.epiclibrary.mobile.BuildConfig
 import com.epiclibrary.mobile.data.AppUpdateInfo
@@ -63,14 +69,17 @@ import com.epiclibrary.mobile.data.EpicAuthException
 import com.epiclibrary.mobile.data.EpicToken
 import com.epiclibrary.mobile.data.Game
 import com.epiclibrary.mobile.data.GameCollection
+import com.epiclibrary.mobile.data.LibraryItemKind
 import com.epiclibrary.mobile.data.RealEpicApi
 import com.epiclibrary.mobile.data.SecureTokenStore
+import com.epiclibrary.mobile.data.UpdateNotificationScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.net.URLDecoder
+import java.text.Collator
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,10 +126,37 @@ fun EpicLibraryApp() {
 
     var language by remember { mutableStateOf(preferences.language()) }
     var themeMode by remember { mutableStateOf(preferences.theme()) }
+    var notificationsEnabled by remember { mutableStateOf(preferences.notificationsEnabled()) }
     var state by remember { mutableStateOf<AppState>(AppState.Loading(AppStrings.text(language, "loading_start"))) }
     var code by remember { mutableStateOf("") }
     var updateStatus by remember { mutableStateOf<AppUpdateStatus>(AppUpdateStatus.NotChecked) }
     var showUpdatePrompt by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationsEnabled = granted
+        preferences.setNotificationsEnabled(granted)
+        if (granted) UpdateNotificationScheduler.schedule(context)
+        else UpdateNotificationScheduler.cancel(context)
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        if (!enabled) {
+            notificationsEnabled = false
+            preferences.setNotificationsEnabled(false)
+            UpdateNotificationScheduler.cancel(context)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        notificationsEnabled = true
+        preferences.setNotificationsEnabled(true)
+        UpdateNotificationScheduler.schedule(context)
+    }
 
     fun text(key: String, vararg args: Any): String = AppStrings.text(language, key, *args)
 
@@ -260,6 +296,11 @@ fun EpicLibraryApp() {
     LaunchedEffect(Unit) {
         restoreSession()
         checkForUpdates()
+        if (notificationsEnabled && (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        ) {
+            UpdateNotificationScheduler.schedule(context)
+        }
     }
 
     fun openEpicLogin() {
@@ -348,6 +389,7 @@ fun EpicLibraryApp() {
                     isRefreshing = current.isRefreshing,
                     refreshError = current.refreshError,
                     updateStatus = updateStatus,
+                    notificationsEnabled = notificationsEnabled,
                     onSelectLanguage = { selected ->
                         preferences.setLanguage(selected)
                         language = selected
@@ -358,6 +400,7 @@ fun EpicLibraryApp() {
                         themeMode = selected
                     },
                     onCheckUpdates = { scope.launch { checkForUpdates() } },
+                    onNotificationsEnabledChange = ::setNotificationsEnabled,
                     onInstallUpdate = ::installUpdate,
                     onRefreshLibrary = ::refreshLibrary,
                     onLogout = {
@@ -522,9 +565,11 @@ private fun HomeScreen(
     isRefreshing: Boolean,
     refreshError: String?,
     updateStatus: AppUpdateStatus,
+    notificationsEnabled: Boolean,
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectTheme: (AppThemeMode) -> Unit,
     onCheckUpdates: () -> Unit,
+    onNotificationsEnabledChange: (Boolean) -> Unit,
     onInstallUpdate: (AppUpdateInfo) -> Unit,
     onRefreshLibrary: () -> Unit,
     onLogout: () -> Unit
@@ -573,12 +618,9 @@ private fun HomeScreen(
 
         when (page) {
             AppPage.STORE -> {
-                val currentUrl = storeWebView.url ?: storeCurrentUrl.value
-                if (!isStoreHomeUrl(currentUrl)) {
-                    storeWebView.loadUrl(STORE_HOME_URL)
-                } else if (storeWebView.url != null) {
-                    storeWebView.reload()
-                }
+                // Re-selecting Store is the explicit refresh gesture: return to
+                // the store home page at its top, including when a product page is open.
+                storeWebView.loadUrl(STORE_HOME_URL)
             }
             AppPage.LIBRARY -> onRefreshLibrary()
             AppPage.SETTINGS -> Unit
@@ -599,21 +641,22 @@ private fun HomeScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            val compactLibraryHeader = selectedPage == AppPage.LIBRARY
             Surface(
                 modifier = Modifier.statusBarsPadding(),
                 color = MaterialTheme.colorScheme.background,
                 tonalElevation = 1.dp
             ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = if (compactLibraryHeader) 7.dp else 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text(title, fontSize = if (compactLibraryHeader) 20.sp else 22.sp, fontWeight = FontWeight.Bold)
                         Text(
                             subtitle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
+                            fontSize = if (compactLibraryHeader) 11.sp else 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -672,9 +715,11 @@ private fun HomeScreen(
                     themeMode = themeMode,
                     displayName = displayName,
                     updateStatus = updateStatus,
+                    notificationsEnabled = notificationsEnabled,
                     onLanguage = onSelectLanguage,
                     onTheme = onSelectTheme,
                     onCheckUpdates = onCheckUpdates,
+                    onNotificationsEnabledChange = onNotificationsEnabledChange,
                     onInstallUpdate = onInstallUpdate,
                     onLogout = onLogout
                 )
@@ -731,6 +776,9 @@ private fun NavigationGlyph(page: AppPage, selected: Boolean) {
     }
 }
 
+private enum class LibraryCategory { ALL, GAMES, TOOLS }
+private enum class LibrarySort { AZ, ZA, MOST_PLAYED, LEAST_PLAYED }
+
 @Composable
 private fun LibraryPage(
     language: AppLanguage,
@@ -740,23 +788,72 @@ private fun LibraryPage(
     refreshError: String?
 ) {
     var search by remember { mutableStateOf("") }
-    var selectedGenre by remember { mutableStateOf("all") }
+    var selectedCategory by remember { mutableStateOf(LibraryCategory.ALL) }
+    var selectedGenre by remember { mutableStateOf<String?>(null) }
+    var selectedPlayerMode by remember { mutableStateOf<String?>(null) }
+    var sortMode by remember { mutableStateOf(LibrarySort.AZ) }
+    var sortExpanded by remember { mutableStateOf(false) }
     var selectedCollectionId by remember { mutableStateOf<String?>(null) }
     val selectedCollection = collections.firstOrNull { it.id == selectedCollectionId }
     val genreIds = remember(games, language) {
-        games.map { it.genre.ifBlank { "other" } }.distinct().sortedBy { AppStrings.genre(language, it) }
+        games.asSequence()
+            .filter { it.kind == LibraryItemKind.GAME }
+            .map { it.genre.ifBlank { "other" } }
+            .distinct()
+            .sortedBy { AppStrings.genre(language, it) }
+            .toList()
     }
+    val hasPlaytimeData = games.any { it.kind == LibraryItemKind.GAME && it.playtimeMinutes != null }
+    val hasPlayerModeData = games.any { it.kind == LibraryItemKind.GAME && it.playerModes.isNotEmpty() }
+    val collator = remember(language) { Collator.getInstance(java.util.Locale.forLanguageTag(language.localeTag)) }
     val filtered = games.filter { game ->
-        val genreMatches = selectedGenre == "all" || game.genre == selectedGenre
+        val categoryMatches = when (selectedCategory) {
+            LibraryCategory.ALL -> true
+            LibraryCategory.GAMES -> game.kind == LibraryItemKind.GAME
+            LibraryCategory.TOOLS -> game.kind == LibraryItemKind.TOOL
+        }
+        val genreMatches = selectedGenre == null || (game.kind == LibraryItemKind.GAME && game.genre == selectedGenre)
+        val playerModeMatches = selectedPlayerMode == null || game.playerModes.contains(selectedPlayerMode)
         val collectionMatches = selectedCollection == null ||
             selectedCollection.gameIds.contains(game.id) ||
             selectedCollection.gameIds.contains(game.appName) ||
             selectedCollection.gameIds.contains(game.catalogItemId) ||
             selectedCollection.gameIds.contains("${game.namespace}:${game.catalogItemId}")
-        genreMatches && collectionMatches && game.title.contains(search, ignoreCase = true)
+        categoryMatches && genreMatches && playerModeMatches && collectionMatches && game.title.contains(search, ignoreCase = true)
+    }
+    val sorted = when (sortMode) {
+        LibrarySort.AZ -> filtered.sortedWith { left, right -> collator.compare(left.title, right.title) }
+        LibrarySort.ZA -> filtered.sortedWith { left, right -> collator.compare(right.title, left.title) }
+        LibrarySort.MOST_PLAYED -> filtered.sortedWith { left, right ->
+            val playtimeOrder = (right.playtimeMinutes ?: -1L).compareTo(left.playtimeMinutes ?: -1L)
+            if (playtimeOrder != 0) playtimeOrder else collator.compare(left.title, right.title)
+        }
+        LibrarySort.LEAST_PLAYED -> filtered.sortedWith { left, right ->
+            val leftTime = left.playtimeMinutes
+            val rightTime = right.playtimeMinutes
+            when {
+                leftTime == null && rightTime == null -> collator.compare(left.title, right.title)
+                leftTime == null -> 1
+                rightTime == null -> -1
+                leftTime != rightTime -> leftTime.compareTo(rightTime)
+                else -> collator.compare(left.title, right.title)
+            }
+        }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+    fun filterByGenre(genreId: String) {
+        selectedCategory = LibraryCategory.GAMES
+        selectedPlayerMode = null
+        selectedGenre = if (selectedGenre == genreId) null else genreId
+    }
+
+    fun filterByPlayerMode(mode: String) {
+        selectedCategory = LibraryCategory.GAMES
+        selectedGenre = null
+        selectedPlayerMode = if (selectedPlayerMode == mode) null else mode
+    }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 6.dp)) {
         OutlinedTextField(
             value = search,
             onValueChange = { search = it },
@@ -767,18 +864,17 @@ private fun LibraryPage(
         )
 
         if (isRefreshing) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
         }
         if (refreshError != null) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(refreshError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
 
         if (collections.isNotEmpty()) {
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
             SectionHeading(AppStrings.text(language, "collections"))
-            Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     FilterChip(
@@ -797,28 +893,143 @@ private fun LibraryPage(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-        SectionHeading(AppStrings.text(language, "genres"))
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
+        SectionHeading(AppStrings.text(language, "library_categories"))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 FilterChip(
-                    selected = selectedGenre == "all",
-                    onClick = { selectedGenre = "all" },
+                    selected = selectedCategory == LibraryCategory.ALL,
+                    onClick = {
+                        selectedCategory = LibraryCategory.ALL
+                        selectedGenre = null
+                        selectedPlayerMode = null
+                    },
                     label = { Text(AppStrings.text(language, "filter_all")) }
                 )
             }
-            items(genreIds, key = { it }) { genreId ->
+            item {
                 FilterChip(
-                    selected = selectedGenre == genreId,
-                    onClick = { selectedGenre = genreId },
-                    label = { Text(AppStrings.genre(language, genreId)) }
+                    selected = selectedCategory == LibraryCategory.GAMES,
+                    onClick = {
+                        selectedCategory = LibraryCategory.GAMES
+                        selectedGenre = null
+                        selectedPlayerMode = null
+                    },
+                    label = { Text(AppStrings.text(language, "category_games")) }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedCategory == LibraryCategory.TOOLS,
+                    onClick = {
+                        selectedCategory = LibraryCategory.TOOLS
+                        selectedGenre = null
+                        selectedPlayerMode = null
+                        if (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED) sortMode = LibrarySort.AZ
+                    },
+                    label = { Text(AppStrings.text(language, "category_tools")) }
                 )
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-        if (filtered.isEmpty()) {
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionHeading(AppStrings.text(language, "genres"))
+            Spacer(Modifier.weight(1f))
+            Box {
+                OutlinedButton(
+                    onClick = { sortExpanded = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(AppStrings.text(language, "sort"), fontSize = 12.sp) }
+                DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(AppStrings.text(language, "sort_order_heading"), fontWeight = FontWeight.Bold) },
+                        onClick = {},
+                        enabled = false
+                    )
+                    DropdownMenuItem(
+                        text = { Text(AppStrings.text(language, "sort_az")) },
+                        onClick = { sortMode = LibrarySort.AZ; sortExpanded = false }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(AppStrings.text(language, "sort_za")) },
+                        onClick = { sortMode = LibrarySort.ZA; sortExpanded = false }
+                    )
+                    if (selectedCategory != LibraryCategory.TOOLS) {
+                        DropdownMenuItem(
+                            text = { Text(AppStrings.text(language, "sort_most_played")) },
+                            onClick = { sortMode = LibrarySort.MOST_PLAYED; sortExpanded = false },
+                            enabled = hasPlaytimeData
+                        )
+                        DropdownMenuItem(
+                            text = { Text(AppStrings.text(language, "sort_least_played")) },
+                            onClick = { sortMode = LibrarySort.LEAST_PLAYED; sortExpanded = false },
+                            enabled = hasPlaytimeData
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(AppStrings.text(language, "sort_player_heading"), fontWeight = FontWeight.Bold) },
+                            onClick = {},
+                            enabled = false
+                        )
+                        DropdownMenuItem(
+                            text = { Text(AppStrings.text(language, "sort_single_player")) },
+                            onClick = { filterByPlayerMode("single"); sortExpanded = false },
+                            enabled = hasPlayerModeData
+                        )
+                        DropdownMenuItem(
+                            text = { Text(AppStrings.text(language, "sort_multiplayer")) },
+                            onClick = { filterByPlayerMode("multi"); sortExpanded = false },
+                            enabled = hasPlayerModeData
+                        )
+                        if (!hasPlaytimeData || !hasPlayerModeData) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(AppStrings.text(language, "sort_metadata_unavailable")) },
+                                onClick = {},
+                                enabled = false
+                            )
+                        }
+                        if (genreIds.isNotEmpty()) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(AppStrings.text(language, "sort_genres_heading"), fontWeight = FontWeight.Bold) },
+                                onClick = {},
+                                enabled = false
+                            )
+                            genreIds.forEach { genreId ->
+                                DropdownMenuItem(
+                                    text = { Text(AppStrings.genre(language, genreId)) },
+                                    onClick = { filterByGenre(genreId); sortExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (selectedCategory != LibraryCategory.TOOLS) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item {
+                    FilterChip(
+                        selected = selectedGenre == null && selectedPlayerMode == null,
+                        onClick = { selectedGenre = null; selectedPlayerMode = null },
+                        label = { Text(AppStrings.text(language, "filter_all")) }
+                    )
+                }
+                items(genreIds, key = { it }) { genreId ->
+                    FilterChip(
+                        selected = selectedGenre == genreId,
+                        onClick = { filterByGenre(genreId) },
+                        label = { Text(AppStrings.genre(language, genreId)) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+        if (sorted.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     if (selectedCollection != null) AppStrings.text(language, "empty_collection")
@@ -831,10 +1042,10 @@ private fun LibraryPage(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 18.dp)
             ) {
-                items(filtered, key = { it.id }) { game -> GameCard(game, language) }
+                items(sorted, key = { it.id }) { game -> GameCard(game, language) }
             }
         }
     }
@@ -971,12 +1182,23 @@ private fun GameCard(game: Game, language: AppLanguage) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    AppStrings.genre(language, game.genre),
+                    if (game.kind == LibraryItemKind.TOOL) AppStrings.text(language, "category_tools")
+                    else AppStrings.genre(language, game.genre),
                     color = colors.onSurfaceVariant,
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (game.kind == LibraryItemKind.GAME) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        AppStrings.playtime(language, game.playtimeMinutes),
+                        color = colors.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -988,9 +1210,11 @@ private fun SettingsPage(
     themeMode: AppThemeMode,
     displayName: String,
     updateStatus: AppUpdateStatus,
+    notificationsEnabled: Boolean,
     onLanguage: (AppLanguage) -> Unit,
     onTheme: (AppThemeMode) -> Unit,
     onCheckUpdates: () -> Unit,
+    onNotificationsEnabledChange: (Boolean) -> Unit,
     onInstallUpdate: (AppUpdateInfo) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -1059,6 +1283,25 @@ private fun SettingsPage(
                     status = updateStatus,
                     onCheck = onCheckUpdates,
                     onInstall = onInstallUpdate
+                )
+            }
+        }
+        item {
+            SettingsCard(title = AppStrings.text(language, "notifications")) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(AppStrings.text(language, "notifications_help"), color = colors.onSurfaceVariant, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = notificationsEnabled,
+                        onCheckedChange = onNotificationsEnabledChange
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    AppStrings.text(language, "wishlist_alerts_unavailable"),
+                    color = colors.onSurfaceVariant,
+                    fontSize = 12.sp
                 )
             }
         }
@@ -1166,3 +1409,4 @@ private fun extractAuthorizationCode(input: String): String {
     return Regex("authorizationCode\\s*[=:]\\s*[\\\"]([^\\\"]+)")
         .find(trimmed)?.groupValues?.get(1) ?: trimmed
 }
+

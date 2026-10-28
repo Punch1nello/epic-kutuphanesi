@@ -35,8 +35,23 @@ class AppPreferences(context: Context) {
         prefs.edit().putString(KEY_THEME, theme.name).apply()
     }
 
+    fun notificationsEnabled(): Boolean = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, false)
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, enabled).apply()
+    }
+
+    fun lastNotifiedUpdateVersionCode(): Int = prefs.getInt(KEY_LAST_NOTIFIED_UPDATE, 0)
+
+    fun setLastNotifiedUpdateVersionCode(versionCode: Int) {
+        prefs.edit().putInt(KEY_LAST_NOTIFIED_UPDATE, versionCode).apply()
+    }
+
     private companion object {
         const val KEY_LANGUAGE = "language"
         const val KEY_THEME = "theme"
+        const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+        const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update_version_code"
     }
 }
+

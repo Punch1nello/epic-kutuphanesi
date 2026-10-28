@@ -217,7 +217,7 @@ class RealEpicApi(
 
     private fun shouldKeep(record: JSONObject): Boolean {
         val namespace = record.optString("namespace")
-        if (namespace == "ue" || namespace == "89efe5924d3d467c839449ab6ab52e7f") return false
+        if (namespace == "89efe5924d3d467c839449ab6ab52e7f") return false
         if (record.optString("appName") == "1") return false
         val platform = record.optJSONArray("platform")
         if (platform != null && platform.length() > 0) {
@@ -273,7 +273,8 @@ class RealEpicApi(
         val item = JSONObject(body).optJSONObject(catalogId) ?: throw IOException("Catalog item missing")
 
         val image = pickImage(item.optJSONArray("keyImages"))
-        val genre = pickGenre(item.optJSONArray("categories"))
+        val categories = item.optJSONArray("categories")
+        val genre = pickGenre(categories)
         return Game(
             id = "$namespace:$catalogId",
             title = item.optString("title").ifBlank { appName },
@@ -285,7 +286,10 @@ class RealEpicApi(
             description = item.optString("description"),
             namespace = namespace,
             catalogItemId = catalogId,
-            appName = appName
+            appName = appName,
+            kind = classifyItem(record, item, categories),
+            playtimeMinutes = readPlaytimeMinutes(record),
+            playerModes = detectPlayerModes(categories)
         )
     }
 
@@ -297,8 +301,80 @@ class RealEpicApi(
         addedLabel = "Epic kütüphanende",
         namespace = record.optString("namespace"),
         catalogItemId = record.optString("catalogItemId"),
-        appName = record.optString("appName")
+        appName = record.optString("appName"),
+        kind = classifyItem(record, null, record.optJSONArray("categories")),
+        playtimeMinutes = readPlaytimeMinutes(record),
+        playerModes = detectPlayerModes(record.optJSONArray("categories"))
     )
+
+    private fun classifyItem(record: JSONObject, catalog: JSONObject?, categories: JSONArray?): LibraryItemKind {
+        if (record.optString("namespace").equals("ue", ignoreCase = true)) return LibraryItemKind.TOOL
+        val metadataText = buildList {
+            listOf(record, catalog).filterNotNull().forEach { json ->
+                listOf("itemType", "productType", "applicationType", "artifactType", "type", "kind")
+                    .forEach { key -> json.optString(key).takeIf(String::isNotBlank)?.let(::add) }
+                json.optJSONObject("metadata")?.let { metadata ->
+                    listOf("itemType", "productType", "applicationType", "artifactType", "type", "kind")
+                        .forEach { key -> metadata.optString(key).takeIf(String::isNotBlank)?.let(::add) }
+                }
+            }
+            catalog?.optString("title")?.takeIf(String::isNotBlank)?.let(::add)
+            record.optString("appName").takeIf(String::isNotBlank)?.let(::add)
+            if (categories != null) {
+                for (i in 0 until categories.length()) {
+                    categories.optJSONObject(i)?.optString("path")?.takeIf(String::isNotBlank)?.let(::add)
+                }
+            }
+        }.joinToString(" ").lowercase()
+
+        val toolTerms = listOf(
+            "application", "applications", "developer tool", "developer tools", "editor",
+            "engine", "utility", "utilities", "software", "launcher", "development tool",
+            "development tools", "unreal engine", "unreal editor", "unrealengine", "unrealeditor"
+        )
+        return if (toolTerms.any(metadataText::contains)) LibraryItemKind.TOOL else LibraryItemKind.GAME
+    }
+
+    /** Playtime is optional: Epic's public library response may not include it. */
+    private fun readPlaytimeMinutes(record: JSONObject): Long? {
+        val sources = buildList {
+            add(record)
+            record.optJSONObject("metadata")?.let(::add)
+            record.optJSONObject("playtime")?.let(::add)
+            record.optJSONObject("stats")?.let(::add)
+        }
+        val minuteKeys = listOf("playtimeMinutes", "playTimeMinutes", "minutesPlayed", "totalPlaytimeMinutes")
+        for (source in sources) {
+            minuteKeys.forEach { key ->
+                if (source.has(key)) source.optLong(key, -1L).takeIf { it >= 0L }?.let { return it }
+            }
+            listOf("playtimeSeconds", "playTimeSeconds", "secondsPlayed", "totalPlaytimeSeconds").forEach { key ->
+                if (source.has(key)) source.optLong(key, -1L).takeIf { it >= 0L }?.let { return it / 60L }
+            }
+            source.optJSONObject("playtime")?.let { playtime ->
+                playtime.optLong("minutes", -1L).takeIf { it >= 0L }?.let { return it }
+                playtime.optLong("seconds", -1L).takeIf { it >= 0L }?.let { return it / 60L }
+            }
+        }
+        return null
+    }
+
+    private fun detectPlayerModes(categories: JSONArray?): Set<String> {
+        if (categories == null) return emptySet()
+        val values = buildList {
+            for (i in 0 until categories.length()) {
+                categories.optJSONObject(i)?.optString("path")?.lowercase()?.let(::add)
+            }
+        }.joinToString(" ").replace('_', ' ').replace('-', ' ')
+        return buildSet {
+            if (listOf("single player", "singleplayer", "single player", "single-player").any(values::contains)) {
+                add("single")
+            }
+            if (listOf("multiplayer", "multi player", "co op", "co-op", "online pvp", "local pvp").any(values::contains)) {
+                add("multi")
+            }
+        }
+    }
 
     private fun pickImage(images: JSONArray?): String {
         if (images == null) return ""
@@ -388,3 +464,4 @@ class RealEpicApi(
     }
 
 }
+

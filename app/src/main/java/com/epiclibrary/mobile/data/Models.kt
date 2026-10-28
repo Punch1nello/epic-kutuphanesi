@@ -1,5 +1,7 @@
 package com.epiclibrary.mobile.data
 
+enum class LibraryItemKind { GAME, TOOL }
+
 data class Game(
     val id: String,
     val title: String,
@@ -11,7 +13,10 @@ data class Game(
     val description: String = "",
     val namespace: String = "",
     val catalogItemId: String = "",
-    val appName: String = ""
+    val appName: String = "",
+    val kind: LibraryItemKind = LibraryItemKind.GAME,
+    val playtimeMinutes: Long? = null,
+    val playerModes: Set<String> = emptySet()
 )
 
 data class GameCollection(
@@ -19,3 +24,4 @@ data class GameCollection(
     val name: String,
     val gameIds: Set<String> = emptySet()
 )
+

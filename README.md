@@ -1,4 +1,4 @@
-# Epic Kütüphanesi — v1.0.2
+# Epic Kütüphanesi — v1.0.3
 
 Kotlin ve Jetpack Compose ile Epic Games hesabındaki kütüphaneyi görüntüleyen Android uygulaması.
 
@@ -7,16 +7,25 @@ Kotlin ve Jetpack Compose ile Epic Games hesabındaki kütüphaneyi görüntüle
 - Mağaza, Kütüphane ve Ayarlar arasında animasyonlu geçiş.
 - Üst başlıklar Android durum çubuğunun altına yerleşir ve saat/bildirim alanıyla çakışmaz.
 - Uygulama simgesi farklı launcher biçimlerine uyumlu olacak şekilde uyarlanabilir simge olarak tanımlanmıştır.
+- Mağaza sekmesine yeniden dokunmak mağazanın ana sayfasını en üste açar; başka sekmeye geçiş mağaza sayfasını yenilemez.
+- Kütüphane Tümü, Oyunlar ve Araçlar olarak ayrılır. Araçlar bölümünde sadece A–Z ve Z–A sıralaması gösterilir.
+- Kütüphane A–Z, Z–A, oynanma süresi, oyuncu modu ve mevcut tür bilgilerine göre filtrelenip sıralanabilir.
+- Bildirimler açılırsa uygulama GitHub güncelleme kaynağını yaklaşık günde bir kontrol eder.
 - Epic Games Store uygulama içi WebView'da açılır; ziyaret edilen ürün sayfalarında Android geri tuşu önceki sayfaya döner.
 - Sekmeler arası geçişte sayfalar yenilenmez. Aynı kütüphane sekmesine tekrar dokunmak kütüphaneyi yeniler; aynı mağaza sekmesine dokunmak ana sayfayı yeniler veya ürün sayfasındaysa ana mağazaya döner.
 - Mağazada Android geri tuşu önce WebView geçmişinde ilerler; geçmiş yoksa ürün sayfasından mağaza ana sayfasına döner.
 - Ayarlarda Türkçe, İngilizce, Almanca, İspanyolca ve Rusça dil seçenekleri; Sistem, Açık ve Koyu tema tercihleri.
 - Oyun kataloğu isteği seçilen dile göre yerelleştirilir. Türler dilden bağımsız kategori kimlikleriyle filtrelenip beş dilde çevrilir.
 - Uygulama oturumu Android Keystore ile şifrelenir. Gerekli olursa Epic access token yenilenir ve refresh token değişimi saklanır.
-- Ayarlardan güncelleme kontrol edilebilir. Uygulama, herkese açık GitHub deposundaki `updates.json` manifestini okur ve GitHub Release APK'sının SHA-256 özetini doğrular. Yayın kurulumu: `UPDATE_SERVER_SETUP.md`.
+- Ayarlardan güncelleme kontrol edilebilir. Uygulama, herkese açık GitHub deposundaki `updates.json` manifestini okur ve GitHub Release APK'sının SHA-256 özetini doğrular. Yayımlanan Release sonrasında GitHub Actions manifesti otomatik yeniler. Yayın kurulumu: `UPDATE_SERVER_SETUP.md`.
 
 ## İlk giriş ve mağaza hesabı
 
 İlk bağlantıda kullanıcı Epic'in kendi giriş sayfasında oturum açar, authorization code değerini uygulamaya verir. Uygulama Epic hesap parolasını istemez veya kaydetmez. Sonraki açılışlarda saklanan oturumu kullanır; belirteç Epic tarafından iptal edilirse tekrar giriş gerekebilir.
 
 Uygulamanın kütüphane oturumu ile mağaza sayfasının web oturumu ayrıdır. Mağaza WebView'ında ilk kez ayrıca giriş gerekebilir; çerezler cihazda saklanır. Ödeme sayfası Epic'in WebView davranışına bağlıdır ve gerçek cihazda doğrulanmalıdır.
+
+## Veri sınırları
+
+Epic'in resmi kullanıcı kitaplığı API'si her oyun için oynanma süresi veya istek listesi fiyatlarını garanti etmez. Uygulama kitaplık kaydında süre bilgisi varsa gösterir; yoksa bunu açıkça belirtir. Oynanma süresine ve oyuncu moduna göre sıralamalar yalnızca ilgili bilgi Epic yanıtında mevcutsa kullanılabilir. İstek listesi indirim bildirimi için uygulamaların kullanabileceği resmi bir Epic API'si bulunmadığından bu özellik şu anda etkin değildir.
+
