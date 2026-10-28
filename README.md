@@ -1,10 +1,12 @@
-# Epic Kütüphanesi — v1.0.1
+# Epic Kütüphanesi — v1.0.2
 
 Kotlin ve Jetpack Compose ile Epic Games hesabındaki kütüphaneyi görüntüleyen Android uygulaması.
 
 ## Özellikler
 
 - Mağaza, Kütüphane ve Ayarlar arasında animasyonlu geçiş.
+- Üst başlıklar Android durum çubuğunun altına yerleşir ve saat/bildirim alanıyla çakışmaz.
+- Uygulama simgesi farklı launcher biçimlerine uyumlu olacak şekilde uyarlanabilir simge olarak tanımlanmıştır.
 - Epic Games Store uygulama içi WebView'da açılır; ziyaret edilen ürün sayfalarında Android geri tuşu önceki sayfaya döner.
 - Sekmeler arası geçişte sayfalar yenilenmez. Aynı kütüphane sekmesine tekrar dokunmak kütüphaneyi yeniler; aynı mağaza sekmesine dokunmak ana sayfayı yeniler veya ürün sayfasındaysa ana mağazaya döner.
 - Mağazada Android geri tuşu önce WebView geçmişinde ilerler; geçmiş yoksa ürün sayfasından mağaza ana sayfasına döner.

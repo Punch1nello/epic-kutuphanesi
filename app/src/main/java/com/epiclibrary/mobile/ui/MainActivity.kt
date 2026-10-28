@@ -599,7 +599,11 @@ private fun HomeScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 1.dp) {
+            Surface(
+                modifier = Modifier.statusBarsPadding(),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 1.dp
+            ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically

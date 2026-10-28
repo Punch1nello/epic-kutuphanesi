@@ -7,7 +7,7 @@ Bu proje doğrudan APK dağıtımı için bir güncelleme denetleyicisi içerir.
 Bu proje şu adreslere göre yapılandırıldı:
 
 - Manifest: `https://raw.githubusercontent.com/Punch1nello/epic-kutuphanesi/main/updates.json`
-- En son APK: `https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.1.apk`
+- En son APK: `https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.2.apk`
 
 `updates.json` dosyasını deponun `main` dalına ekle ve her sürümün APK dosyasını bir GitHub Release'e ekle. Depo public olmalı ki uygulama giriş yapmadan bu dosyalara ulaşabilsin. Yeni sürümlerde APK dosya adını, URL'yi, `versionCode` değerini ve SHA-256 özetini birlikte güncelle.
 
@@ -20,9 +20,9 @@ Herkese açık bir HTTPS sunucusuna şunları koy:
 
 ```json
 {
-  "versionCode": 11,
-  "versionName": "1.0.1",
-  "apkUrl": "https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.1.apk",
+  "versionCode": 12,
+  "versionName": "1.0.2",
+  "apkUrl": "https://github.com/Punch1nello/epic-kutuphanesi/releases/latest/download/EpicLibraryMobile-v1.0.2.apk",
   "sha256": "APK_DOSYASININ_64_HANELI_SHA256_OZETI",
   "releaseNotes": "Arayüz, dil ve mağaza gezintisi iyileştirmeleri"
 }
