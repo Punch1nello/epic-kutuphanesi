@@ -60,6 +60,8 @@ object AppStrings {
         "store_load_error" to "The store page could not be loaded. Check your connection and try again.",
         "store_retry" to "Retry",
         "store_checkout" to "Checkout",
+        "store_home" to "Home",
+        "store_reload" to "Reload",
         "settings_profile" to "ACCOUNT",
         "account_connected" to "Connected as %s",
         "language" to "Language",
@@ -186,6 +188,8 @@ object AppStrings {
         "store_load_error" to "Mağaza açılamadı. Bağlantını kontrol edip yeniden dene.",
         "store_retry" to "Yeniden dene",
         "store_checkout" to "Ödeme",
+        "store_home" to "Ana sayfa",
+        "store_reload" to "Yenile",
         "settings_profile" to "HESAP",
         "account_connected" to "%s hesabıyla bağlı",
         "language" to "Dil",
@@ -280,7 +284,7 @@ object AppStrings {
         "sort_metadata_unavailable" to "Epic stellt die Daten für diesen Filter nicht bereit.",
         "empty_library" to "Keine Spiele für diese Filter.", "empty_collection" to "Keine passenden Spiele in dieser Sammlung.",
         "unnamed_game" to "Epic-Spiel", "store_loading" to "Shop wird geladen…", "store_load_error" to "Shop nicht erreichbar. Prüfe die Verbindung und versuche es erneut.",
-        "store_retry" to "Erneut versuchen", "store_checkout" to "Kasse",
+        "store_retry" to "Erneut versuchen", "store_checkout" to "Kasse", "store_home" to "Startseite", "store_reload" to "Neu laden",
         "settings_profile" to "KONTO", "account_connected" to "Verbunden als %s", "language" to "Sprache",
         "language_help" to "Sprache für die gesamte App auswählen.", "theme" to "Darstellung", "theme_system" to "System",
         "theme_light" to "Hell", "theme_dark" to "Dunkel", "updates" to "App-Updates",
@@ -332,7 +336,7 @@ object AppStrings {
         "sort_metadata_unavailable" to "Epic no proporciona los datos necesarios para este filtro.",
         "empty_library" to "Ningún juego coincide con estos filtros.", "empty_collection" to "No hay juegos coincidentes en esta colección.",
         "unnamed_game" to "Juego de Epic", "store_loading" to "Cargando la tienda…", "store_load_error" to "No se pudo abrir la tienda. Comprueba la conexión e inténtalo de nuevo.",
-        "store_retry" to "Reintentar", "store_checkout" to "Pago",
+        "store_retry" to "Reintentar", "store_checkout" to "Pago", "store_home" to "Inicio", "store_reload" to "Recargar",
         "settings_profile" to "CUENTA", "account_connected" to "Conectado como %s", "language" to "Idioma",
         "language_help" to "Elige el idioma que se usará en toda la aplicación.", "theme" to "Apariencia", "theme_system" to "Sistema",
         "theme_light" to "Claro", "theme_dark" to "Oscuro", "updates" to "Actualizaciones de la app",
@@ -384,7 +388,7 @@ object AppStrings {
         "sort_metadata_unavailable" to "Epic не предоставляет данные для этого фильтра.",
         "empty_library" to "Нет игр, соответствующих фильтрам.", "empty_collection" to "В этой коллекции нет подходящих игр.",
         "unnamed_game" to "Игра Epic", "store_loading" to "Загружаем магазин…", "store_load_error" to "Не удалось открыть магазин. Проверьте подключение и попробуйте снова.",
-        "store_retry" to "Повторить", "store_checkout" to "Оформление заказа",
+        "store_retry" to "Повторить", "store_checkout" to "Оформление заказа", "store_home" to "Главная", "store_reload" to "Обновить",
         "settings_profile" to "АККАУНТ", "account_connected" to "Подключено: %s", "language" to "Язык",
         "language_help" to "Выберите язык приложения.", "theme" to "Оформление", "theme_system" to "Системная",
         "theme_light" to "Светлая", "theme_dark" to "Тёмная", "updates" to "Обновления приложения",
@@ -466,4 +470,3 @@ object AppStrings {
         }
     }
 }
-

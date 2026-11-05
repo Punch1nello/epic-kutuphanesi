@@ -1,4 +1,3 @@
-import SafariServices
 import SwiftUI
 import UIKit
 import WebKit
@@ -40,8 +39,10 @@ private enum IOSStrings {
             "search": ["tr":"Kütüphanede ara", "en":"Search library", "de":"Bibliothek durchsuchen", "es":"Buscar en la biblioteca", "ru":"Поиск в библиотеке"],
             "collections": ["tr":"KOLEKSİYONLAR", "en":"COLLECTIONS", "de":"SAMMLUNGEN", "es":"COLECCIONES", "ru":"КОЛЛЕКЦИИ"],
             "empty": ["tr":"Bu filtrelerle oyun bulunamadı.", "en":"No games match these filters.", "de":"Keine Spiele für diese Filter.", "es":"Ningún juego coincide con estos filtros.", "ru":"Нет игр по выбранным фильтрам."],
-            "playtimeMissing": ["tr":"Oynanma süresi Epic'ten alınamıyor", "en":"Playtime not provided by Epic", "de":"Spielzeit von Epic nicht verfügbar", "es":"Epic no proporciona el tiempo de juego", "ru":"Epic не передаёт время игры"],
             "playtime": ["tr":"Oynanma süresi: %d dk", "en":"Playtime: %d min", "de":"Spielzeit: %d Min.", "es":"Tiempo de juego: %d min", "ru":"Время игры: %d мин"],
+            "storeLoadError": ["tr":"Mağaza sayfası yüklenemedi. Bağlantını kontrol edip yeniden dene.", "en":"The store page could not be loaded. Check your connection and try again.", "de":"Die Shop-Seite konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.", "es":"No se pudo cargar la tienda. Comprueba la conexión e inténtalo de nuevo.", "ru":"Не удалось загрузить магазин. Проверьте подключение и повторите попытку."],
+            "reload": ["tr":"Yenile", "en":"Reload", "de":"Neu laden", "es":"Recargar", "ru":"Обновить"],
+            "forward": ["tr":"İleri", "en":"Forward", "de":"Weiter", "es":"Adelante", "ru":"Вперёд"],
             "sortAZ": ["tr":"A–Z", "en":"A–Z", "de":"A–Z", "es":"A–Z", "ru":"А–Я"],
             "sortZA": ["tr":"Z–A", "en":"Z–A", "de":"Z–A", "es":"Z–A", "ru":"Я–А"],
             "mostPlayed": ["tr":"En çok oynanan", "en":"Most played", "de":"Am häufigsten gespielt", "es":"Más jugados", "ru":"Чаще всего играли"],
@@ -69,6 +70,22 @@ private enum IOSStrings {
             "home": ["tr":"Ana sayfa", "en":"Home", "de":"Startseite", "es":"Inicio", "ru":"Главная"]
         ]
         return common[key]?[language.rawValue] ?? key
+    }
+
+    static func libraryCount(_ count: Int, _ language: AppLanguage) -> String {
+        let word: String
+        switch language {
+        case .tr: word = "oyun"
+        case .en: word = count == 1 ? "game" : "games"
+        case .de: word = count == 1 ? "Spiel" : "Spiele"
+        case .es: word = count == 1 ? "juego" : "juegos"
+        case .ru:
+            let lastTwo = count % 100
+            let last = count % 10
+            word = (11...14).contains(lastTwo) ? "игр" :
+                last == 1 ? "игра" : (2...4).contains(last) ? "игры" : "игр"
+        }
+        return "\(count) \(word)"
     }
 }
 
@@ -239,6 +256,16 @@ private struct StoreScreen: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if state.isLoading { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 4) }
+                if state.hasLoadError {
+                    HStack {
+                        Text(IOSStrings.text("storeLoadError", language))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(IOSStrings.text("retry", language)) { state.webView?.reload() }
+                    }
+                    .padding(.horizontal, 12)
+                }
                 StoreWebView(state: state, homeRequest: homeRequest)
             }
             .navigationTitle(IOSStrings.text("store", language))
@@ -247,8 +274,12 @@ private struct StoreScreen: View {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { state.webView?.goBack() } label: { Image(systemName: "chevron.left") }
                         .disabled(!state.canGoBack)
+                    Button { state.webView?.goForward() } label: { Image(systemName: "chevron.right") }
+                        .disabled(!state.canGoForward)
                     Button { homeRequest += 1 } label: { Image(systemName: "house") }
                         .accessibilityLabel(IOSStrings.text("home", language))
+                    Button { state.webView?.reload() } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(IOSStrings.text("reload", language))
                 }
             }
         }
@@ -259,7 +290,9 @@ private struct StoreScreen: View {
 private final class StoreWebState: ObservableObject {
     weak var webView: WKWebView?
     @Published var canGoBack = false
+    @Published var canGoForward = false
     @Published var isLoading = true
+    @Published var hasLoadError = false
 }
 
 private struct StoreWebView: UIViewRepresentable {
@@ -272,6 +305,7 @@ private struct StoreWebView: UIViewRepresentable {
         let view = WKWebView(frame: .zero)
         view.allowsBackForwardNavigationGestures = true
         view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
         state.webView = view
         view.load(URLRequest(url: URL(string: "https://store.epicgames.com/")!))
         return view
@@ -284,20 +318,42 @@ private struct StoreWebView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let state: StoreWebState
         var lastHomeRequest = 0
         init(state: StoreWebState) { self.state = state }
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             state.isLoading = true
+            state.hasLoadError = false
         }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             state.isLoading = false
             state.canGoBack = webView.canGoBack
+            state.canGoForward = webView.canGoForward
         }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             state.isLoading = false
             state.canGoBack = webView.canGoBack
+            state.canGoForward = webView.canGoForward
+            state.hasLoadError = true
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            state.isLoading = false
+            state.canGoBack = webView.canGoBack
+            state.canGoForward = webView.canGoForward
+            state.hasLoadError = true
+        }
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            guard navigationAction.targetFrame == nil,
+                  let scheme = navigationAction.request.url?.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http" else { return nil }
+            webView.load(navigationAction.request)
+            return nil
         }
     }
 }
@@ -333,6 +389,14 @@ private struct LibraryScreen: View {
             result.sort { ($0.playtimeMinutes ?? Int.max) < ($1.playtimeMinutes ?? Int.max) }
         }
         return result
+    }
+
+    private var categoryCount: Int {
+        switch category {
+        case .all: model.games.count
+        case .games: model.games.filter { $0.kind == .game }.count
+        case .tools: model.games.filter { $0.kind == .tool }.count
+        }
     }
 
     var body: some View {
@@ -400,8 +464,17 @@ private struct LibraryScreen: View {
                 .padding(16)
             }
             .refreshable { await model.refreshLibrary(locale: language.locale) }
-            .navigationTitle(IOSStrings.text("library", language))
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 1) {
+                        Text(IOSStrings.text("library", language)).font(.headline)
+                        Text(IOSStrings.libraryCount(categoryCount, language))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 
@@ -438,9 +511,6 @@ private struct GameCard: View {
                 if let minutes = game.playtimeMinutes {
                     Text(String(format: IOSStrings.text("playtime", language), minutes))
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                } else {
-                    Text(IOSStrings.text("playtimeMissing", language))
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
         }

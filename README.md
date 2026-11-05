@@ -1,4 +1,4 @@
-# Epic Kütüphanesi — v1.0.5
+# Epic Kütüphanesi — v1.0.0
 
 Kotlin ve Jetpack Compose ile Epic Games hesabındaki kütüphaneyi görüntüleyen Android uygulaması.
 
@@ -8,12 +8,12 @@ Kotlin ve Jetpack Compose ile Epic Games hesabındaki kütüphaneyi görüntüle
 - Üst başlıklar Android durum çubuğunun altına yerleşir ve saat/bildirim alanıyla çakışmaz.
 - Uygulama simgesi farklı launcher biçimlerine uyumlu olacak şekilde uyarlanabilir simge olarak tanımlanmıştır.
 - Mağaza sekmesine yeniden dokunmak mağazanın ana sayfasını en üste açar; başka sekmeye geçiş mağaza sayfasını yenilemez.
-- Kütüphane Tümü, Oyunlar ve Araçlar olarak ayrılır. Araçlar bölümünde sadece A–Z ve Z–A sıralaması gösterilir.
+- Kütüphane Tümü, Oyunlar ve Araçlar olarak ayrılır. Başlığın altındaki sayaç seçili bölümün toplamını gösterir; Araçlar bölümünde sadece A–Z ve Z–A sıralaması gösterilir.
 - Kütüphane içindeki tür filtreleri kaldırıldı; Tümü/Oyunlar/Araçlar ve Sırala aynı satırda gösterilir. Bilinen Epic geliştirme araçları Araçlar'a, geri kalan kitaplık ürünleri Oyunlar'a alınır.
 - Tekrarlanan Epic kayıtları kütüphane ızgarasında tekilleştirilir; kütüphanedeyken Geri tuşu mağaza sekmesine döner.
 - Kütüphane A–Z, Z–A, oynanma süresi ve mevcut oyuncu modu bilgilerine göre sıralanabilir.
 - Sıralama veya filtre seçimi kütüphane listesini en başa alır.
-- Epic Games Store uygulama içi WebView'da açılır; kullanıcı etkileşimiyle açılan yeni ödeme pencereleri de uygulama içinde gösterilir. WebView hatasında yeniden deneme sunulur.
+- Epic Games Store uygulama içi WebView'da açılır; ürün bağlantıları ve yeni pencereler aynı uygulama içi gezinme akışında açılır. Geri/ileri/ana sayfa/yenile kontrolleri ve yükleme hatasında yeniden deneme bulunur.
 - Sekmeler arası geçişte sayfalar yenilenmez. Aynı kütüphane sekmesine tekrar dokunmak kütüphaneyi yeniler; aynı mağaza sekmesine dokunmak ana sayfayı yeniler veya ürün sayfasındaysa ana mağazaya döner.
 - Mağazada Android geri tuşu önce WebView geçmişinde ilerler; geçmiş yoksa ürün sayfasından mağaza ana sayfasına döner.
 - Ayarlarda Türkçe, İngilizce, Almanca, İspanyolca ve Rusça dil seçenekleri; Sistem, Açık ve Koyu tema tercihleri.
@@ -31,7 +31,6 @@ Uygulamanın kütüphane oturumu ile mağaza sayfasının web oturumu ayrıdır.
 
 Epic'in resmi kullanıcı kitaplığı API'si her oyun için oynanma süresi veya istek listesi fiyatlarını garanti etmez. Uygulama yalnızca Epic kaydında süre bilgisi varsa oyun kartında oynanma süresini gösterir. Oynanma süresine ve oyuncu moduna göre sıralamalar yalnızca ilgili bilgi Epic yanıtında mevcutsa kullanılabilir. Mağaza satın alma akışı Epic'in WebView ve ödeme sağlayıcısına bağlıdır; gerçek hesap ve cihazla doğrulanmalıdır.
 
-## iOS kaynak projesi
+## iOS uygulaması
 
-`ios/EpicLibraryIOS.xcodeproj` içinde Keychain oturum depolaması, Epic mağazası WebView'ı ve kütüphane kategorileri olan SwiftUI iOS uygulaması bulunur. Derleme, imzalama ve yükleme için macOS ve Xcode gerekir; bu Windows çalışma alanında iOS derlemesi doğrulanamadı. Kurulum ve dağıtım için [ios/README.md](ios/README.md) dosyasına bak. iOS sürümleri TestFlight veya App Store üzerinden dağıtılır; Android APK güncelleyicisi iOS'ta kullanılmaz.
-
+`ios/EpicLibraryIOS.xcodeproj` içinde Keychain oturumu, Epic mağazası WKWebView'ı ve seçili kategori sayacı olan SwiftUI uygulaması bulunur. GitHub Release'te iOS için Xcode kaynak ZIP'i yer alır. IPA burada üretilemez; bunun için macOS, Xcode ve Apple imzası gerekir. iOS kurulum ve dağıtım adımları [ios/README.md](ios/README.md) dosyasındadır.

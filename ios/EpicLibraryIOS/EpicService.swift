@@ -184,19 +184,35 @@ enum EpicService {
         if namespace == "89efe5924d3d467c839449ab6ab52e7f" { return nil }
         let platforms = value["platform"] as? [String] ?? []
         if !platforms.isEmpty && !platforms.contains(where: { ["windows", "win32"].contains($0.lowercased()) }) { return nil }
-        let categories = value["categories"] as? [[String: Any]] ?? []
-        let paths = categories.compactMap { $0["path"] as? String }
         let metadata = value["metadata"] as? [String: Any] ?? [:]
-        let typeKeys = ["itemType", "productType", "applicationType", "artifactType", "type", "kind"]
-        let types = typeKeys.compactMap { value[$0] as? String } + typeKeys.compactMap { metadata[$0] as? String }
-        let toolTypes: Set<String> = ["application", "applications", "editor", "tool", "tools", "utility", "utilities", "launcher", "software"]
-        let toolCategories: Set<String> = ["applications", "developer tools", "development tools", "utilities", "editor", "tools"]
-        let isTool = namespace.lowercased() == "ue" || types.contains { toolTypes.contains($0.lowercased()) } || paths.contains { path in
-            path.lowercased().split(separator: "/").contains { toolCategories.contains(String($0).replacingOccurrences(of: "_", with: " ")) }
-        }
         let playtime = value["playtimeMinutes"] as? Int ?? metadata["playtimeMinutes"] as? Int
         return LibraryRecord(namespace: namespace, catalogItemID: catalogID, appName: appName,
-                             playtimeMinutes: playtime, kind: isTool ? .tool : .game, categoryPaths: paths)
+                             playtimeMinutes: playtime,
+                             kind: isKnownTool(namespace: namespace, names: [appName]) ? .tool : .game)
+    }
+
+    private static func isKnownTool(namespace: String, names: [String]) -> Bool {
+        if namespace.caseInsensitiveCompare("ue") == .orderedSame { return true }
+        let normalizedNames = names.map { name in
+            name.lowercased()
+                .replacingOccurrences(of: "&", with: " ")
+                .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " +", with: " ", options: .regularExpression)
+        }
+        let knownNames: Set<String> = [
+            "unreal engine", "unreal editor", "unreal editor for fortnite", "uefn",
+            "twinmotion", "realityscan", "reality scan", "realitycapture", "reality capture",
+            "metahuman creator", "quixel bridge", "quixel mixer"
+        ]
+        return normalizedNames.contains { name in
+            if knownNames.contains(name) { return true }
+            return ["unreal engine", "twinmotion"].contains { prefix in
+                guard name.hasPrefix(prefix + " ") else { return false }
+                let suffix = name.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                return suffix.split(separator: " ").allSatisfy { token in token.allSatisfy { $0.isNumber } }
+            }
+        }
     }
 
     private static func catalogGame(_ record: LibraryRecord, token: String, locale: String) async throws -> EpicGame {
@@ -226,7 +242,8 @@ enum EpicService {
             return nil
         })
         return EpicGame(id: "\(record.namespace):\(record.catalogItemID)", title: title, imageURL: imageURL,
-                        kind: record.kind, playtimeMinutes: record.playtimeMinutes, playerModes: modes,
+                        kind: isKnownTool(namespace: record.namespace, names: [record.appName, title]) ? .tool : .game,
+                        playtimeMinutes: record.playtimeMinutes, playerModes: modes,
                         genre: paths.first ?? "", namespace: record.namespace,
                         catalogItemID: record.catalogItemID, appName: record.appName)
     }

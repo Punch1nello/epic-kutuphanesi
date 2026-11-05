@@ -41,7 +41,6 @@ struct LibraryRecord: Sendable {
     let appName: String
     let playtimeMinutes: Int?
     let kind: LibraryItemKind
-    let categoryPaths: [String]
 }
 
 enum EpicLibraryError: LocalizedError {

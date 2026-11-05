@@ -1,6 +1,6 @@
 # Epic Kütüphanesi for iPhone
 
-This is a native SwiftUI companion app for iOS 16 and newer. It includes the Epic Store in a WKWebView, library categories and sorting, best-effort collections, Turkish/English/German/Spanish/Russian UI strings, and Keychain-backed Epic sessions.
+This is a native SwiftUI companion app for iOS 16 and newer (marketing version 1.0.0). It includes in-app Epic Store navigation, library categories with a live item count, Turkish/English/German/Spanish/Russian UI strings, and Keychain-backed Epic sessions.
 
 ## Build and install on iPhone
 
@@ -10,11 +10,12 @@ This is a native SwiftUI companion app for iOS 16 and newer. It includes the Epi
 4. Connect an iPhone or choose an iOS simulator, then press **Run**.
 5. On first launch, use **Epic girişini aç**, sign in on Epic's page, copy the authorization code back into the app, and connect the account. The app stores the returned session in iOS Keychain and refreshes it on later launches when Epic allows it.
 
-Xcode and Apple's signing system are required to run a native iOS app on a real iPhone. The Windows workspace cannot compile or sign an iOS binary, so this project has not been built or device-tested here.
+Xcode and Apple's signing system are required to run a native iOS app on a real iPhone. The GitHub Release carries the iOS Xcode source archive, not a signed IPA: an installable build must be created with a Mac, Xcode, and the owner's Apple signing account. This Windows workspace cannot compile or sign the iOS target, so iOS has not been built or device-tested here.
 
 ## Notes
 
-- Epic's store WebView login has its own browser cookies; it is separate from the library API session.
+- Epic's store WKWebView login has its own browser cookies; it is separate from the library API session. Product links opened as new windows are loaded into the same in-app browser.
 - Epic collections rely on an undocumented launcher GraphQL surface and may return no collections if Epic changes it.
-- The iOS app does not install APKs or self-update from GitHub. iOS updates must be distributed through Xcode, TestFlight, or an App Store listing.
-- Epic may not provide playtime for every library entry. Missing values are marked in the UI. Tools are classified from explicit item metadata or the Unreal Engine namespace, rather than from words in game titles.
+- The iOS app does not install APKs or self-update from GitHub. iOS updates must be distributed with Xcode, TestFlight, or an App Store listing.
+- Epic may not provide playtime for every library entry. Missing values are hidden. Tools are classified from a small Epic product allowlist or the Unreal Engine namespace; other library entries remain games.
+- Epic's web checkout is controlled by Epic and its payment provider. The app does not call undocumented Epic purchase APIs; test checkout with a real Epic account and device before relying on it.

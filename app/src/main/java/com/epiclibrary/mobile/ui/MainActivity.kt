@@ -537,6 +537,7 @@ private fun HomeScreen(
     val storeLoading = remember { mutableStateOf(true) }
     val storeError = remember { mutableStateOf(false) }
     val storeCanGoBack = remember { mutableStateOf(false) }
+    val storeCanGoForward = remember { mutableStateOf(false) }
     val storeCurrentUrl = remember { mutableStateOf(STORE_HOME_URL) }
     var storePopupWebView by remember { mutableStateOf<WebView?>(null) }
 
@@ -553,9 +554,10 @@ private fun HomeScreen(
             context = context,
             onLoading = { storeLoading.value = it },
             onError = { storeError.value = it },
-            onNavigationChanged = { url, canGoBack ->
+            onNavigationChanged = { url, canGoBack, canGoForward ->
                 if (!url.isNullOrBlank()) storeCurrentUrl.value = url
                 storeCanGoBack.value = canGoBack
+                storeCanGoForward.value = canGoForward
             },
             onPopupRequested = { popup ->
                 if (storePopupWebView != null) false
@@ -568,6 +570,7 @@ private fun HomeScreen(
         )
     }
     var selectedPage by remember { mutableStateOf(AppPage.STORE) }
+    var libraryCategory by remember { mutableStateOf(LibraryCategory.ALL) }
 
     DisposableEffect(storeWebView) {
         onDispose {
@@ -614,9 +617,14 @@ private fun HomeScreen(
         AppPage.LIBRARY -> AppStrings.text(language, "nav_library")
         AppPage.SETTINGS -> AppStrings.text(language, "nav_settings")
     }
+    val libraryCount = when (libraryCategory) {
+        LibraryCategory.ALL -> games.size
+        LibraryCategory.GAMES -> games.count { it.kind == LibraryItemKind.GAME }
+        LibraryCategory.TOOLS -> games.count { it.kind == LibraryItemKind.TOOL }
+    }
     val subtitle = when (selectedPage) {
         AppPage.STORE -> AppStrings.text(language, "store_subtitle")
-        AppPage.LIBRARY -> AppStrings.librarySubtitle(language, games.size, displayName)
+        AppPage.LIBRARY -> AppStrings.librarySubtitle(language, libraryCount, displayName)
         AppPage.SETTINGS -> AppStrings.text(language, "account_connected", displayName)
     }
 
@@ -684,6 +692,12 @@ private fun HomeScreen(
                     loading = storeLoading.value,
                     failed = storeError.value,
                     language = language,
+                    canGoBack = storeCanGoBack.value,
+                    canGoForward = storeCanGoForward.value,
+                    onBack = { if (storeWebView.canGoBack()) storeWebView.goBack() },
+                    onForward = { if (storeWebView.canGoForward()) storeWebView.goForward() },
+                    onHome = { storeWebView.loadUrl(STORE_HOME_URL) },
+                    onReload = { storeWebView.reload() },
                     onRetry = {
                         if (storeWebView.url.isNullOrBlank()) storeWebView.loadUrl(STORE_HOME_URL)
                         else storeWebView.reload()
@@ -694,7 +708,9 @@ private fun HomeScreen(
                     games = games,
                     collections = collections,
                     isRefreshing = isRefreshing,
-                    refreshError = refreshError
+                    refreshError = refreshError,
+                    selectedCategory = libraryCategory,
+                    onCategoryChange = { libraryCategory = it }
                 )
                 AppPage.SETTINGS -> SettingsPage(
                     language = language,
@@ -775,10 +791,11 @@ private fun LibraryPage(
     games: List<Game>,
     collections: List<GameCollection>,
     isRefreshing: Boolean,
-    refreshError: String?
+    refreshError: String?,
+    selectedCategory: LibraryCategory,
+    onCategoryChange: (LibraryCategory) -> Unit
 ) {
     var search by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(LibraryCategory.ALL) }
     var selectedPlayerMode by remember { mutableStateOf<String?>(null) }
     var sortMode by remember { mutableStateOf(LibrarySort.AZ) }
     var sortExpanded by remember { mutableStateOf(false) }
@@ -830,7 +847,7 @@ private fun LibraryPage(
     }
 
     fun filterByPlayerMode(mode: String) {
-        selectedCategory = LibraryCategory.GAMES
+        onCategoryChange(LibraryCategory.GAMES)
         selectedPlayerMode = if (selectedPlayerMode == mode) null else mode
         scrollScope.launch { if (sorted.isNotEmpty()) gridState.animateScrollToItem(0) }
     }
@@ -842,7 +859,7 @@ private fun LibraryPage(
     }
 
     fun selectCategory(category: LibraryCategory) {
-        selectedCategory = category
+        onCategoryChange(category)
         selectedPlayerMode = null
         if (category == LibraryCategory.TOOLS &&
             (sortMode == LibrarySort.MOST_PLAYED || sortMode == LibrarySort.LEAST_PLAYED)
@@ -1024,9 +1041,25 @@ private fun StorePage(
     loading: Boolean,
     failed: Boolean,
     language: AppLanguage,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onHome: () -> Unit,
+    onReload: () -> Unit,
     onRetry: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(Color(0xFFF4F5FA))) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            TextButton(onClick = onBack, enabled = canGoBack) { Text("‹") }
+            TextButton(onClick = onForward, enabled = canGoForward) { Text("›") }
+            TextButton(onClick = onHome) { Text(AppStrings.text(language, "store_home")) }
+            TextButton(onClick = onReload) { Text(AppStrings.text(language, "store_reload")) }
+        }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
         AndroidView(
             modifier = Modifier.fillMaxSize().weight(1f),
@@ -1089,7 +1122,7 @@ private fun createStoreWebView(
     context: Context,
     onLoading: (Boolean) -> Unit,
     onError: (Boolean) -> Unit,
-    onNavigationChanged: (String?, Boolean) -> Unit,
+    onNavigationChanged: (String?, Boolean, Boolean) -> Unit,
     onPopupRequested: (WebView) -> Boolean,
     onClosePopup: (WebView) -> Unit,
     isPopup: Boolean = false
@@ -1101,7 +1134,7 @@ private fun createStoreWebView(
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.javaScriptCanOpenWindowsAutomatically = true
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = false
         settings.textZoom = 100
@@ -1110,23 +1143,23 @@ private fun createStoreWebView(
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean =
-                request.url.scheme != "https"
+                request.url.scheme !in setOf("https", "http")
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 onLoading(true)
                 onError(false)
-                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true)
+                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true, view?.canGoForward() == true)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 CookieManager.getInstance().flush()
                 onLoading(false)
-                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true)
+                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true, view?.canGoForward() == true)
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                 super.doUpdateVisitedHistory(view, url, isReload)
-                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true)
+                onNavigationChanged(url ?: view?.url, view?.canGoBack() == true, view?.canGoForward() == true)
             }
 
             override fun onReceivedError(
@@ -1162,12 +1195,14 @@ private fun createStoreWebView(
                 isUserGesture: Boolean,
                 resultMsg: Message?
             ): Boolean {
-                if (isPopup || !isUserGesture || resultMsg == null) return false
+                val openerHost = view?.url?.let { Uri.parse(it).host }.orEmpty().lowercase()
+                val isEpicPage = openerHost == "epicgames.com" || openerHost.endsWith(".epicgames.com")
+                if (isPopup || !isEpicPage || resultMsg == null) return false
                 val popup = createStoreWebView(
                     context = context,
                     onLoading = onLoading,
                     onError = onError,
-                    onNavigationChanged = { _, _ -> },
+                    onNavigationChanged = { _, _, _ -> },
                     onPopupRequested = onPopupRequested,
                     onClosePopup = onClosePopup,
                     isPopup = true
@@ -1435,4 +1470,3 @@ private fun extractAuthorizationCode(input: String): String {
     return Regex("authorizationCode\\s*[=:]\\s*[\\\"]([^\\\"]+)")
         .find(trimmed)?.groupValues?.get(1) ?: trimmed
 }
-

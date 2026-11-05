@@ -30,7 +30,7 @@ class RealEpicApi(
             "https://store.epicgames.com/graphql",
             "https://graphql.epicgames.com/graphql"
         )
-        private const val USER_AGENT = "EpicLibraryMobile/0.5"
+        private const val USER_AGENT = "EpicLibraryMobile/1.0.0"
         private const val COUNTRY = "TR"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
@@ -466,4 +466,3 @@ class RealEpicApi(
     }
 
 }
-

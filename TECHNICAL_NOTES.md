@@ -3,7 +3,7 @@
 - Epic auth adapter follows the current Legendary-style authorization-code flow.
 - Library retrieval uses the current legacy library-service + catalog-service endpoints used by Legendary.
 - Pagination follows `responseMetadata.nextCursor`.
-- Non-Windows-only entries and Unreal/tool namespaces are filtered.
+- Non-Windows-only entries are filtered. Only the Unreal tool namespace and known Epic creative-tool names are classified as tools; general metadata types/categories can otherwise misclassify games.
 - Catalog enrichment prefers `DieselGameBoxTall` / `DieselGameBox` images.
 - Refresh tokens are encrypted with AES/GCM using an Android Keystore key and only the encrypted value is persisted in SharedPreferences.
 - The UI never receives or logs the Epic password.
